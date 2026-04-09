@@ -1,0 +1,4 @@
+exportExample/
+outputTestDirectories/
+venv/
+__pycache__/
