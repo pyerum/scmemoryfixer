@@ -9,14 +9,13 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import logging
 
-# Try to import required libraries
+# Try to import required libraries (only for image overlay operations)
 try:
     from PIL import Image
-    import piexif
-    HAS_IMAGE_LIBS = True
+    HAS_PIL = True
 except ImportError:
-    HAS_IMAGE_LIBS = False
-    logging.warning("PIL/piexif not available - image metadata functions disabled")
+    HAS_PIL = False
+    logging.warning("PIL not available - image overlay functions disabled")
 
 try:
     import cv2
@@ -24,20 +23,6 @@ try:
 except ImportError:
     HAS_CV2 = False
     logging.warning("OpenCV not available - video functions disabled")
-
-try:
-    import mutagen
-    HAS_MUTAGEN = True
-except ImportError:
-    HAS_MUTAGEN = False
-    logging.warning("mutagen not available - video metadata functions disabled")
-
-try:
-    import exiftool
-    HAS_EXIFTOOL = True
-except ImportError:
-    HAS_EXIFTOOL = False
-    logging.warning("pyexiftool not available - advanced video metadata functions disabled")
 
 logger = logging.getLogger(__name__)
 
@@ -110,13 +95,9 @@ class MetadataHandler:
     
     def update_image_metadata(self, image_path: Path, metadata: Dict[str, Any]) -> bool:
         """
-        Update EXIF metadata for an image file.
+        Update EXIF metadata for an image file using exiftool.
         Returns True if successful, False otherwise.
         """
-        if not HAS_IMAGE_LIBS:
-            logger.error("PIL/piexif not available - cannot update image metadata")
-            return False
-        
         try:
             # Parse date
             date_obj = self.parse_snapchat_date(metadata['date']) if metadata.get('date') else None
@@ -125,39 +106,11 @@ class MetadataHandler:
                 logger.warning(f"No valid date for {image_path.name}")
                 return False
             
-            # Open image and get existing EXIF
-            img = Image.open(image_path)
-            exif_dict = {}
+            # Use exiftool wrapper for metadata update
+            from exiftool_wrapper import ExifToolWrapper
+            wrapper = ExifToolWrapper()
             
-            try:
-                exif_dict = piexif.load(img.info.get('exif', b''))
-            except:
-                exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}}
-            
-            # Update DateTimeOriginal (36867)
-            date_str = date_obj.strftime("%Y:%m:%d %H:%M:%S")
-            exif_dict['Exif'][piexif.ExifIFD.DateTimeOriginal] = date_str.encode('utf-8')
-            exif_dict['Exif'][piexif.ExifIFD.DateTimeDigitized] = date_str.encode('utf-8')
-            
-            # Update DateTime (306) in 0th IFD
-            exif_dict['0th'][piexif.ImageIFD.DateTime] = date_str.encode('utf-8')
-            
-            # Add location data if available
-            if metadata.get('location'):
-                self._add_gps_data(exif_dict, metadata['location'])
-            
-            # Convert back to bytes and save
-            exif_bytes = piexif.dump(exif_dict)
-            img.save(image_path, exif=exif_bytes)
-            
-            # Update file modification time to match the actual date from JSON
-            # This is the correct date the picture was taken
-            import os
-            timestamp = date_obj.timestamp()
-            os.utime(image_path, (timestamp, timestamp))
-            
-            logger.info(f"Updated metadata for {image_path.name}")
-            return True
+            return wrapper.update_metadata(image_path, metadata, date_obj)
             
         except Exception as e:
             logger.error(f"Error updating metadata for {image_path.name}: {e}")
@@ -165,162 +118,26 @@ class MetadataHandler:
     
     def update_video_metadata(self, video_path: Path, metadata: Dict[str, Any]) -> bool:
         """
-        Update metadata for a video file (MP4/QuickTime format).
+        Update metadata for a video file (MP4/QuickTime format) using exiftool.
         Sets CreateDate, ModifyDate, MediaCreateDate, MediaModifyDate, TrackCreateDate, TrackModifyDate.
         Also updates file creation and modification timestamps.
         """
-        date_obj = self.parse_snapchat_date(metadata['date']) if metadata.get('date') else None
-        
-        if not date_obj:
-            logger.warning(f"No valid date for {video_path.name}")
-            return False
-        
-        # First, try using exiftool (more reliable for QuickTime metadata)
-        if HAS_EXIFTOOL:
-            try:
-                return self._update_video_metadata_exiftool(video_path, metadata, date_obj)
-            except Exception as e:
-                logger.warning(f"exiftool failed for {video_path.name}, falling back to mutagen: {e}")
-        
-        # Fall back to mutagen if exiftool is not available or fails
-        if HAS_MUTAGEN:
-            try:
-                return self._update_video_metadata_mutagen(video_path, metadata, date_obj)
-            except Exception as e:
-                logger.error(f"mutagen also failed for {video_path.name}: {e}")
-                return False
-        
-        logger.error("No video metadata library available")
-        return False
-    
-    def _update_video_metadata_exiftool(self, video_path: Path, metadata: Dict[str, Any], date_obj: datetime) -> bool:
-        """
-        Update video metadata using exiftool (more reliable for QuickTime).
-        """
         try:
-            # Format date for EXIF/QuickTime metadata
-            # QuickTime uses format: "2024:01:15 14:30:00" (UTC, no timezone indicator)
-            date_str = date_obj.strftime("%Y:%m:%d %H:%M:%S")
+            # Parse date
+            date_obj = self.parse_snapchat_date(metadata['date']) if metadata.get('date') else None
             
-            # Prepare exiftool command arguments
-            exif_args = [
-                f"-CreateDate={date_str}",
-                f"-ModifyDate={date_str}",
-                f"-MediaCreateDate={date_str}",
-                f"-MediaModifyDate={date_str}",
-                f"-TrackCreateDate={date_str}",
-                f"-TrackModifyDate={date_str}",
-                # Also set "Content Create Day" (com.apple.quicktime.creationdate)
-                f"-com.apple.quicktime.creationdate={date_str}",
-                "-overwrite_original",  # Don't create backup file
-            ]
-            
-            # Add GPS coordinates if available
-            if metadata.get('location'):
-                coords = self._parse_location_string(metadata['location'])
-                if coords:
-                    lat, lon = coords
-                    # Format for GPSCoordinates: "+69.483986+20.881018"
-                    gps_str = f"{'+' if lat >= 0 else ''}{lat:.6f}{'+' if lon >= 0 else ''}{lon:.6f}"
-                    exif_args.append(f"-GPSCoordinates={gps_str}")
-            
-            # Execute exiftool command
-            import subprocess
-            cmd = ["exiftool"] + exif_args + [str(video_path)]
-            
-            logger.debug(f"Running exiftool command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                logger.info(f"Updated video metadata with exiftool for {video_path.name}")
-                
-                # Update file modification time to match the actual date from JSON
-                import os
-                timestamp = date_obj.timestamp()
-                os.utime(video_path, (timestamp, timestamp))
-                
-                return True
-            else:
-                logger.error(f"exiftool failed for {video_path.name}: {result.stderr}")
+            if not date_obj:
+                logger.warning(f"No valid date for {video_path.name}")
                 return False
-                
-        except Exception as e:
-            logger.error(f"Error updating video metadata with exiftool for {video_path.name}: {e}", exc_info=True)
-            return False
-    
-    def _update_video_metadata_mutagen(self, video_path: Path, metadata: Dict[str, Any], date_obj: datetime) -> bool:
-        """
-        Update video metadata using mutagen (fallback).
-        """
-        try:
-            # Format date for QuickTime metadata (ISO 8601 format)
-            # QuickTime uses format like: "2024-01-15T14:30:00Z"
-            date_iso = date_obj.strftime("%Y-%m-%dT%H:%M:%SZ")
             
-            # Load MP4 file directly
-            from mutagen.mp4 import MP4
-            video_file = MP4(str(video_path))
+            # Use exiftool wrapper for metadata update
+            from exiftool_wrapper import ExifToolWrapper
+            wrapper = ExifToolWrapper()
             
-            # Initialize tags if needed
-            if video_file.tags is None:
-                video_file.add_tags()
-            
-            # Update QuickTime date fields
-            # CreateDate (©day), ModifyDate (©mod)
-            date_fields = [
-                '©day',  # CreateDate (QuickTime)
-                '©mod',  # ModifyDate (QuickTime)  
-            ]
-            
-            for field in date_fields:
-                video_file.tags[field] = [date_iso]
-            
-            # Also try alternative field names for compatibility
-            # Set "Content Create Day" (com.apple.quicktime.creationdate) specifically
-            alt_date_fields = [
-                'com.apple.quicktime.creationdate',
-                'com.apple.quicktime.modificationdate',
-            ]
-            
-            for field in alt_date_fields:
-                try:
-                    video_file.tags[field] = [date_iso]
-                except:
-                    pass
-            
-            # Add GPS coordinates if available
-            if metadata.get('location'):
-                coords = self._parse_location_string(metadata['location'])
-                if coords:
-                    lat, lon = coords
-                    # Format for GPSCoordinates: "+69.483986+20.881018/"
-                    gps_str = f"{'+' if lat >= 0 else ''}{lat:.6f}{'+' if lon >= 0 else ''}{lon:.6f}/"
-                    
-                    # Try standard GPS field
-                    try:
-                        video_file.tags['©xyz'] = [gps_str]  # GPSCoordinates
-                    except:
-                        pass
-                    
-                    # Also try alternative GPS field
-                    try:
-                        video_file.tags['com.apple.quicktime.location.ISO6709'] = [gps_str]
-                    except:
-                        pass
-            
-            # Save the metadata
-            video_file.save()
-            
-            # Update file modification time to match the actual date from JSON
-            import os
-            timestamp = date_obj.timestamp()
-            os.utime(video_path, (timestamp, timestamp))
-            
-            logger.info(f"Updated video metadata with mutagen for {video_path.name}")
-            return True
+            return wrapper.update_metadata(video_path, metadata, date_obj)
             
         except Exception as e:
-            logger.error(f"Error updating video metadata with mutagen for {video_path.name}: {e}", exc_info=True)
+            logger.error(f"Error updating metadata for {video_path.name}: {e}")
             return False
     
     def _parse_location_string(self, location_str: str) -> Optional[Tuple[float, float]]:
@@ -355,38 +172,3 @@ class MetadataHandler:
             logger.warning(f"Could not parse location string '{location_str}': {e}")
         
         return None
-    
-    def _add_gps_data(self, exif_dict: Dict, location_str: str):
-        """Add GPS data to EXIF dictionary from Snapchat location string."""
-        if not HAS_IMAGE_LIBS:
-            return
-        
-        coords = self._parse_location_string(location_str)
-        if not coords:
-            return
-        
-        lat, lon = coords
-        
-        # Convert decimal degrees to EXIF GPS format (degrees, minutes, seconds)
-        def dec_to_dms(dec):
-            degrees = int(dec)
-            minutes = int((dec - degrees) * 60)
-            seconds = (dec - degrees - minutes/60) * 3600
-            return (degrees, 1), (minutes, 1), (int(seconds * 100), 100)
-        
-        lat_dms = dec_to_dms(abs(lat))
-        lon_dms = dec_to_dms(abs(lon))
-        
-        # Set GPS reference (N/S for latitude, E/W for longitude)
-        lat_ref = b'N' if lat >= 0 else b'S'
-        lon_ref = b'E' if lon >= 0 else b'W'
-        
-        # Add GPS data to EXIF dictionary
-        exif_dict['GPS'] = {
-            piexif.GPSIFD.GPSLatitudeRef: lat_ref,
-            piexif.GPSIFD.GPSLatitude: lat_dms,
-            piexif.GPSIFD.GPSLongitudeRef: lon_ref,
-            piexif.GPSIFD.GPSLongitude: lon_dms,
-        }
-        
-        logger.debug(f"Added GPS data: {lat}, {lon}")

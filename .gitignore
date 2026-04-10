@@ -3,3 +3,6 @@ exportTest/
 outputTestDirectories/
 venv/
 __pycache__/
+debug_metadata_update.py
+test_exiftool_integration.py
+test_app.py

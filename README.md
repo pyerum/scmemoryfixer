@@ -36,10 +36,10 @@ The application extracts, processes, and fixes these files.
    ```
 
 ### Dependencies
-- Pillow (image processing)
-- piexif (EXIF metadata manipulation)
+- Pillow (image processing and overlay operations)
 - opencv-python-headless (video overlay merging)
 - python-dateutil (date parsing)
+- **ExifTool** (bundled with application - no separate installation needed)
 
 ## Usage
 
@@ -67,7 +67,11 @@ The application extracts, processes, and fixes these files.
 3. **File Processing**: Each media file is:
    - Matched to its metadata via UUID in filename
    - Overlay merged (if requested)
-   - EXIF metadata updated with correct date
+   - **Metadata Update**: Using bundled ExifTool for both images and videos:
+     - Sets correct date/time from JSON metadata
+     - Adds TimeZoneOffset tag (0 for UTC)
+     - Adds GPS coordinates if available
+     - Updates file creation/modification timestamps
    - Renamed with `snapMemory_` prefix
    - Saved to appropriate output directory
 4. **Cleanup**: Temporary files are removed, logs are saved
