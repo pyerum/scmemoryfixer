@@ -30,7 +30,9 @@ class MemoryFixerGUI:
         # Variables
         self.zip_files = []
         self.output_dir = None
-        self.merge_overlays = tk.BooleanVar(value=True)
+        self.merge_image_overlays = tk.BooleanVar(value=True)
+        self.merge_video_overlays = tk.BooleanVar(value=False)
+        self.separate_folders = tk.BooleanVar(value=True)
         self.processing = False
         self.processor = None
         
@@ -114,8 +116,25 @@ class MemoryFixerGUI:
         options_frame = ttk.LabelFrame(main_frame, text="Options", padding="10")
         options_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        ttk.Checkbutton(options_frame, text="Merge overlays with media", 
-                       variable=self.merge_overlays).pack(anchor=tk.W)
+        # Overlay options
+        overlay_frame = ttk.Frame(options_frame)
+        overlay_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Label(overlay_frame, text="Overlay Options:").pack(anchor=tk.W)
+        
+        ttk.Checkbutton(overlay_frame, text="Merge overlays with pictures", 
+                       variable=self.merge_image_overlays).pack(anchor=tk.W, padx=(20, 0))
+        
+        video_frame = ttk.Frame(overlay_frame)
+        video_frame.pack(anchor=tk.W, padx=(20, 0), pady=(2, 0))
+        ttk.Checkbutton(video_frame, text="Merge overlays with videos", 
+                       variable=self.merge_video_overlays).pack(side=tk.LEFT)
+        ttk.Label(video_frame, text="(resource intensive)", 
+                 font=("Helvetica", 9), foreground="gray").pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Organization options
+        ttk.Checkbutton(options_frame, text="Separate pictures and videos into subfolders", 
+                       variable=self.separate_folders).pack(anchor=tk.W, pady=(10, 0))
         
         # Progress area
         progress_frame = ttk.LabelFrame(main_frame, text="Progress", padding="10")
@@ -262,7 +281,11 @@ class MemoryFixerGUI:
         try:
             self.processor = MemoryProcessor()
             results = self.processor.process_files(
-                self.zip_files, self.output_dir, self.merge_overlays.get()
+                self.zip_files, 
+                self.output_dir, 
+                self.merge_image_overlays.get(),
+                self.merge_video_overlays.get(),
+                self.separate_folders.get()
             )
             
             # Send results to main thread via queue

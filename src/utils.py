@@ -90,27 +90,34 @@ def find_json_file(extract_dir: Path) -> Optional[Path]:
     
     return None
 
-def create_output_structure(output_dir: Path) -> Dict[str, Path]:
+def create_output_structure(output_dir: Path, separate_folders: bool = True) -> Dict[str, Path]:
     """
     Create output directory structure and return paths.
+    If separate_folders is True, creates images/ and videos/ subdirectories.
+    If False, uses the output_dir directly for all files.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create subdirectories
-    images_dir = output_dir / "images"
-    videos_dir = output_dir / "videos"
-    logs_dir = output_dir / "logs"
-    
-    images_dir.mkdir(exist_ok=True)
-    videos_dir.mkdir(exist_ok=True)
-    logs_dir.mkdir(exist_ok=True)
-    
-    return {
-        "images": images_dir,
-        "videos": videos_dir,
-        "logs": logs_dir,
-        "root": output_dir
-    }
+    if separate_folders:
+        # Create subdirectories
+        images_dir = output_dir / "images"
+        videos_dir = output_dir / "videos"
+        
+        images_dir.mkdir(exist_ok=True)
+        videos_dir.mkdir(exist_ok=True)
+        
+        return {
+            "images": images_dir,
+            "videos": videos_dir,
+            "root": output_dir
+        }
+    else:
+        # Use output_dir directly for all files
+        return {
+            "images": output_dir,
+            "videos": output_dir,
+            "root": output_dir
+        }
 
 def clean_temp_directory(temp_dir: Path):
     """Clean up temporary directory."""

@@ -9,12 +9,21 @@ from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
 
-from utils import (
-    extract_uuid_from_filename, extract_zip_files, 
-    find_json_file, create_output_structure, clean_temp_directory
-)
-from metadata import MetadataHandler
-from overlay import OverlayHandler
+try:
+    from .utils import (
+        extract_uuid_from_filename, extract_zip_files, 
+        find_json_file, create_output_structure, clean_temp_directory
+    )
+    from .metadata import MetadataHandler
+    from .overlay import OverlayHandler
+except ImportError:
+    # Fallback for direct execution
+    from utils import (
+        extract_uuid_from_filename, extract_zip_files, 
+        find_json_file, create_output_structure, clean_temp_directory
+    )
+    from metadata import MetadataHandler
+    from overlay import OverlayHandler
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +36,9 @@ class MemoryProcessor:
         self.temp_dir = None
         self.output_structure = None
     
-    def process_files(self, zip_paths: List[Path], output_dir: Path, merge_overlays: bool) -> Dict[str, Any]:
+    def process_files(self, zip_paths: List[Path], output_dir: Path, 
+                     merge_image_overlays: bool, merge_video_overlays: bool,
+                     separate_folders: bool = True) -> Dict[str, Any]:
         """
         Main processing function.
         Returns a dictionary with processing results.
@@ -47,7 +58,7 @@ class MemoryProcessor:
             logger.info(f"Created temp directory: {self.temp_dir}")
             
             # Create output structure
-            self.output_structure = create_output_structure(output_dir)
+            self.output_structure = create_output_structure(output_dir, separate_folders)
             
             # Extract zip files
             logger.info(f"Extracting {len(zip_paths)} zip files...")
@@ -76,8 +87,16 @@ class MemoryProcessor:
             
             for i, (rel_path, media_path) in enumerate(media_files.items()):
                 try:
+                    # Determine which overlay option to use based on file type
+                    if media_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
+                        merge_overlay = merge_image_overlays
+                    elif media_path.suffix.lower() == '.mp4':
+                        merge_overlay = merge_video_overlays
+                    else:
+                        merge_overlay = False
+                    
                     success = self._process_single_file(
-                        media_path, rel_path, merge_overlays, results
+                        media_path, rel_path, merge_overlay, results
                     )
                     
                     if success:
