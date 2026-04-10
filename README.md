@@ -104,3 +104,6 @@ This project uses the following libraries:
 - python-dateutil  # For date parsing
 plus, most metadata processing happens thanks to ExifTool binaries directly included in the project for ease of use:
 - ExifTool
+
+### Disclaimer
+This project is not affiliated in any way with Snapchat or Snap Inc. Snapchat and the Snapchat logo are trademarks of Snapchat Inc.
