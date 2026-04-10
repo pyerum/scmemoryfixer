@@ -22,7 +22,7 @@ class MemoryFixerGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Snapchat Memory Fixer")
-        self.root.geometry("800x600")
+        self.root.geometry("1300x1000")
         
         # Configure styles
         self.setup_styles()
@@ -31,8 +31,8 @@ class MemoryFixerGUI:
         self.zip_files = []
         self.output_dir = None
         self.merge_image_overlays = tk.BooleanVar(value=True)
-        self.merge_video_overlays = tk.BooleanVar(value=False)
-        self.separate_folders = tk.BooleanVar(value=True)
+        self.merge_video_overlays = tk.BooleanVar(value=True)
+        self.separate_folders = tk.BooleanVar(value=False)
         self.processing = False
         self.processor = None
         
@@ -65,16 +65,12 @@ class MemoryFixerGUI:
         main_frame.columnconfigure(1, weight=1)
         
         # Title
-        title_label = ttk.Label(main_frame, text="Snapchat Memory Fixer", 
+        title_label = ttk.Label(main_frame, text="Snapchat Memories Export Fixer", 
                                style="Title.TLabel")
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
-        # Zip files selection
-        ttk.Label(main_frame, text="Snapchat Export Zip Files:", 
-                 style="Subtitle.TLabel").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
-        
         # Drag and drop area for zip files
-        self.zip_frame = ttk.LabelFrame(main_frame, text="Drop zip files here", padding="10")
+        self.zip_frame = ttk.LabelFrame(main_frame, text="Select all the zip files from your export", padding="10")
         self.zip_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         self.zip_frame.columnconfigure(0, weight=1)
         
@@ -98,7 +94,7 @@ class MemoryFixerGUI:
                   command=self.clear_zip_files).pack(side=tk.LEFT, padx=5)
         
         # Output directory selection
-        ttk.Label(main_frame, text="Output Directory:", 
+        ttk.Label(main_frame, text="Output Directory (in what folder should your memories go?):", 
                  style="Subtitle.TLabel").grid(row=3, column=0, sticky=tk.W, pady=(10, 5))
         
         output_frame = ttk.Frame(main_frame)
@@ -122,18 +118,18 @@ class MemoryFixerGUI:
         
         ttk.Label(overlay_frame, text="Overlay Options:").pack(anchor=tk.W)
         
-        ttk.Checkbutton(overlay_frame, text="Merge overlays with pictures", 
+        ttk.Checkbutton(overlay_frame, text="Merge overlays with pictures (put the text, filters, drawings, etc back into the pictures)", 
                        variable=self.merge_image_overlays).pack(anchor=tk.W, padx=(20, 0))
         
         video_frame = ttk.Frame(overlay_frame)
         video_frame.pack(anchor=tk.W, padx=(20, 0), pady=(2, 0))
-        ttk.Checkbutton(video_frame, text="Merge overlays with videos", 
+        ttk.Checkbutton(video_frame, text="Merge overlays with videos (put the text, filters, drawings, etc back into the videos)", 
                        variable=self.merge_video_overlays).pack(side=tk.LEFT)
-        ttk.Label(video_frame, text="(resource intensive)", 
+        ttk.Label(video_frame, text="(resource intensive, the processing might take a little if you have many files)", 
                  font=("Helvetica", 9), foreground="gray").pack(side=tk.LEFT, padx=(5, 0))
         
         # Organization options
-        ttk.Checkbutton(options_frame, text="Separate pictures and videos into subfolders", 
+        ttk.Checkbutton(options_frame, text="Separate pictures and videos in two sub-directories (/videos and /pictures)", 
                        variable=self.separate_folders).pack(anchor=tk.W, pady=(10, 0))
         
         # Progress area
