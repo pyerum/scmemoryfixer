@@ -32,6 +32,13 @@ except ImportError:
     HAS_MUTAGEN = False
     logging.warning("mutagen not available - video metadata functions disabled")
 
+try:
+    import exiftool
+    HAS_EXIFTOOL = True
+except ImportError:
+    HAS_EXIFTOOL = False
+    logging.warning("pyexiftool not available - advanced video metadata functions disabled")
+
 logger = logging.getLogger(__name__)
 
 class MetadataHandler:
@@ -88,11 +95,15 @@ class MetadataHandler:
         """
         Parse Snapchat date string to datetime object.
         Format example: "2024-01-15 14:30:00 UTC"
+        Returns timezone-aware datetime in UTC.
         """
         try:
-            # Remove timezone for simplicity
+            # Parse as UTC timezone-aware datetime
+            from datetime import timezone
             date_part = date_str.split(' UTC')[0]
-            return datetime.strptime(date_part, "%Y-%m-%d %H:%M:%S")
+            naive_dt = datetime.strptime(date_part, "%Y-%m-%d %H:%M:%S")
+            # Make it timezone-aware (UTC)
+            return naive_dt.replace(tzinfo=timezone.utc)
         except Exception as e:
             logger.warning(f"Could not parse date '{date_str}': {e}")
             return None
@@ -155,18 +166,92 @@ class MetadataHandler:
     def update_video_metadata(self, video_path: Path, metadata: Dict[str, Any]) -> bool:
         """
         Update metadata for a video file (MP4/QuickTime format).
-        Sets CreateDate, ModifyDate, MediaCreateDate, MediaModifyDate, and GPSCoordinates.
+        Sets CreateDate, ModifyDate, MediaCreateDate, MediaModifyDate, TrackCreateDate, TrackModifyDate.
+        Also updates file creation and modification timestamps.
         """
-        if not HAS_MUTAGEN:
-            logger.error("mutagen not available - cannot update video metadata")
-            return False
-        
         date_obj = self.parse_snapchat_date(metadata['date']) if metadata.get('date') else None
         
         if not date_obj:
             logger.warning(f"No valid date for {video_path.name}")
             return False
         
+        # First, try using exiftool (more reliable for QuickTime metadata)
+        if HAS_EXIFTOOL:
+            try:
+                return self._update_video_metadata_exiftool(video_path, metadata, date_obj)
+            except Exception as e:
+                logger.warning(f"exiftool failed for {video_path.name}, falling back to mutagen: {e}")
+        
+        # Fall back to mutagen if exiftool is not available or fails
+        if HAS_MUTAGEN:
+            try:
+                return self._update_video_metadata_mutagen(video_path, metadata, date_obj)
+            except Exception as e:
+                logger.error(f"mutagen also failed for {video_path.name}: {e}")
+                return False
+        
+        logger.error("No video metadata library available")
+        return False
+    
+    def _update_video_metadata_exiftool(self, video_path: Path, metadata: Dict[str, Any], date_obj: datetime) -> bool:
+        """
+        Update video metadata using exiftool (more reliable for QuickTime).
+        """
+        try:
+            # Format date for EXIF/QuickTime metadata
+            # QuickTime uses format: "2024:01:15 14:30:00" (UTC, no timezone indicator)
+            date_str = date_obj.strftime("%Y:%m:%d %H:%M:%S")
+            
+            # Prepare exiftool command arguments
+            exif_args = [
+                f"-CreateDate={date_str}",
+                f"-ModifyDate={date_str}",
+                f"-MediaCreateDate={date_str}",
+                f"-MediaModifyDate={date_str}",
+                f"-TrackCreateDate={date_str}",
+                f"-TrackModifyDate={date_str}",
+                # Also set "Content Create Day" (com.apple.quicktime.creationdate)
+                f"-com.apple.quicktime.creationdate={date_str}",
+                "-overwrite_original",  # Don't create backup file
+            ]
+            
+            # Add GPS coordinates if available
+            if metadata.get('location'):
+                coords = self._parse_location_string(metadata['location'])
+                if coords:
+                    lat, lon = coords
+                    # Format for GPSCoordinates: "+69.483986+20.881018"
+                    gps_str = f"{'+' if lat >= 0 else ''}{lat:.6f}{'+' if lon >= 0 else ''}{lon:.6f}"
+                    exif_args.append(f"-GPSCoordinates={gps_str}")
+            
+            # Execute exiftool command
+            import subprocess
+            cmd = ["exiftool"] + exif_args + [str(video_path)]
+            
+            logger.debug(f"Running exiftool command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                logger.info(f"Updated video metadata with exiftool for {video_path.name}")
+                
+                # Update file modification time to match the actual date from JSON
+                import os
+                timestamp = date_obj.timestamp()
+                os.utime(video_path, (timestamp, timestamp))
+                
+                return True
+            else:
+                logger.error(f"exiftool failed for {video_path.name}: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating video metadata with exiftool for {video_path.name}: {e}", exc_info=True)
+            return False
+    
+    def _update_video_metadata_mutagen(self, video_path: Path, metadata: Dict[str, Any], date_obj: datetime) -> bool:
+        """
+        Update video metadata using mutagen (fallback).
+        """
         try:
             # Format date for QuickTime metadata (ISO 8601 format)
             # QuickTime uses format like: "2024-01-15T14:30:00Z"
@@ -191,6 +276,7 @@ class MetadataHandler:
                 video_file.tags[field] = [date_iso]
             
             # Also try alternative field names for compatibility
+            # Set "Content Create Day" (com.apple.quicktime.creationdate) specifically
             alt_date_fields = [
                 'com.apple.quicktime.creationdate',
                 'com.apple.quicktime.modificationdate',
@@ -230,11 +316,11 @@ class MetadataHandler:
             timestamp = date_obj.timestamp()
             os.utime(video_path, (timestamp, timestamp))
             
-            logger.info(f"Updated video metadata for {video_path.name}")
+            logger.info(f"Updated video metadata with mutagen for {video_path.name}")
             return True
             
         except Exception as e:
-            logger.error(f"Error updating video metadata for {video_path.name}: {e}", exc_info=True)
+            logger.error(f"Error updating video metadata with mutagen for {video_path.name}: {e}", exc_info=True)
             return False
     
     def _parse_location_string(self, location_str: str) -> Optional[Tuple[float, float]]:
