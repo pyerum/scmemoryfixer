@@ -11,16 +11,20 @@ from datetime import datetime
 
 try:
     from .utils import (
-        extract_uuid_from_filename, extract_zip_files, 
-        find_json_file, create_output_structure, clean_temp_directory
+        extract_uuid_from_filename, sort_zips_by_name,
+        extract_single_zip, cleanup_zip_extract,
+        collect_media_files_from_extract, find_json_file,
+        create_output_structure, clean_temp_directory
     )
     from .metadata import MetadataHandler
     from .overlay import OverlayHandler
 except ImportError:
     # Fallback for direct execution
     from utils import (
-        extract_uuid_from_filename, extract_zip_files, 
-        find_json_file, create_output_structure, clean_temp_directory
+        extract_uuid_from_filename, sort_zips_by_name,
+        extract_single_zip, cleanup_zip_extract,
+        collect_media_files_from_extract, find_json_file,
+        create_output_structure, clean_temp_directory
     )
     from metadata import MetadataHandler
     from overlay import OverlayHandler
@@ -41,7 +45,7 @@ class MemoryProcessor:
                      separate_folders: bool = True, 
                      progress_callback = None) -> Dict[str, Any]:
         """
-        Main processing function.
+        Main processing function - processes one zip at a time.
         Returns a dictionary with processing results.
         
         Args:
@@ -51,6 +55,7 @@ class MemoryProcessor:
             merge_video_overlays: Whether to merge overlays with videos
             separate_folders: Whether to separate images and videos into subdirectories
             progress_callback: Optional callback function for progress updates
+                              Signature: callback(zip_current, zip_total, media_current, media_total)
         """
         results = {
             'total_files': 0,
@@ -69,67 +74,93 @@ class MemoryProcessor:
             # Create output structure
             self.output_structure = create_output_structure(output_dir, separate_folders)
             
-            # Extract zip files
-            logger.info(f"Extracting {len(zip_paths)} zip files...")
-            extracted_files = extract_zip_files(zip_paths, self.temp_dir)
+            # Sort zips so the base one (with JSON) comes first
+            sorted_zips = sort_zips_by_name(zip_paths)
+            logger.info(f"Processing {len(sorted_zips)} zip files...")
             
-            # Find and load JSON metadata
-            json_file = find_json_file(self.temp_dir)
-            if not json_file:
-                error_msg = "Could not find memories_history.json file"
-                results['errors'].append(error_msg)
-                logger.error(error_msg)
-                return results
+            # Track total media files across all zips
+            total_media_files = 0
+            processed_media_files = 0
+            failed_media_files = 0
             
-            logger.info(f"Found JSON file: {json_file}")
-            if not self.metadata_handler.load_json_metadata(json_file):
-                error_msg = "Failed to load metadata from JSON file"
-                results['errors'].append(error_msg)
-                logger.error(error_msg)
-                return results
-            
-            # Process media files
-            media_files = self._collect_media_files(extracted_files)
-            results['total_files'] = len(media_files)
-            
-            logger.info(f"Processing {len(media_files)} media files...")
-            
-            # Send initial progress update
-            if progress_callback:
-                progress_callback(0, len(media_files))
-            
-            for i, (rel_path, media_path) in enumerate(media_files.items()):
-                try:
-                    # Determine which overlay option to use based on file type
-                    if media_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
-                        merge_overlay = merge_image_overlays
-                    elif media_path.suffix.lower() == '.mp4':
-                        merge_overlay = merge_video_overlays
-                    else:
-                        merge_overlay = False
-                    
-                    success = self._process_single_file(
-                        media_path, rel_path, merge_overlay, results
-                    )
-                    
-                    if success:
-                        results['processed_files'] += 1
-                    else:
-                        results['failed_files'] += 1
-                    
-                    # Send progress update
-                    if progress_callback:
-                        progress_callback(i + 1, len(media_files))
-                    
-                    # Log progress every 10 files
-                    if (i + 1) % 10 == 0 or (i + 1) == len(media_files):
-                        logger.info(f"Progress: {i + 1}/{len(media_files)} files processed")
-                        
-                except Exception as e:
-                    error_msg = f"Error processing {media_path.name}: {e}"
+            # Process each zip
+            for zip_idx, zip_path in enumerate(sorted_zips):
+                logger.info(f"Processing zip {zip_idx + 1}/{len(sorted_zips)}: {zip_path.name}")
+                
+                # Extract this zip
+                if not extract_single_zip(zip_path, self.temp_dir):
+                    error_msg = f"Failed to extract {zip_path.name}"
                     results['errors'].append(error_msg)
-                    results['failed_files'] += 1
-                    logger.error(error_msg, exc_info=True)
+                    logger.error(error_msg)
+                    failed_media_files += 1
+                    continue
+                
+                # Find JSON file (only from first zip)
+                json_file = None
+                if zip_idx == 0:
+                    json_file = find_json_file(self.temp_dir)
+                    if not json_file:
+                        error_msg = "Could not find memories_history.json file in first zip"
+                        results['errors'].append(error_msg)
+                        logger.error(error_msg)
+                        cleanup_zip_extract(self.temp_dir, zip_path.stem)
+                        continue
+                    
+                    logger.info(f"Found JSON file: {json_file}")
+                    if not self.metadata_handler.load_json_metadata(json_file):
+                        error_msg = "Failed to load metadata from JSON file"
+                        results['errors'].append(error_msg)
+                        logger.error(error_msg)
+                        cleanup_zip_extract(self.temp_dir, zip_path.stem)
+                        continue
+                
+                # Collect media files from this zip
+                media_files = collect_media_files_from_extract(self.temp_dir)
+                total_media_files += len(media_files)
+                
+                logger.info(f"Found {len(media_files)} media files in {zip_path.name}")
+                
+                # Process media files from this zip
+                for media_idx, (rel_path, media_path) in enumerate(media_files.items()):
+                    try:
+                        # Determine which overlay option to use based on file type
+                        if media_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
+                            merge_overlay = merge_image_overlays
+                        elif media_path.suffix.lower() == '.mp4':
+                            merge_overlay = merge_video_overlays
+                        else:
+                            merge_overlay = False
+                        
+                        success = self._process_single_file(
+                            media_path, rel_path, merge_overlay, results
+                        )
+                        
+                        if success:
+                            processed_media_files += 1
+                            results['processed_files'] += 1
+                        else:
+                            failed_media_files += 1
+                            results['failed_files'] += 1
+                        
+                        # Send progress update
+                        if progress_callback:
+                            progress_callback(zip_idx + 1, len(sorted_zips), processed_media_files, total_media_files)
+                        
+                        # Log progress every 10 files
+                        if (processed_media_files + 1) % 10 == 0:
+                            logger.info(f"Progress: {processed_media_files}/{total_media_files} files processed")
+                            
+                    except Exception as e:
+                        error_msg = f"Error processing {media_path.name}: {e}"
+                        results['errors'].append(error_msg)
+                        failed_media_files += 1
+                        results['failed_files'] += 1
+                        logger.error(error_msg, exc_info=True)
+                
+                # Clean up this zip's extracted files
+                cleanup_zip_extract(self.temp_dir, zip_path.stem)
+            
+            results['total_files'] = total_media_files
             
             # Clean up
             self._cleanup()
@@ -142,21 +173,6 @@ class MemoryProcessor:
         
         results['end_time'] = datetime.now()
         return results
-    
-    def _collect_media_files(self, extracted_files: Dict[str, Path]) -> Dict[str, Path]:
-        """Collect only media files (images and videos)."""
-        media_files = {}
-        
-        for rel_path, file_path in extracted_files.items():
-            # Skip files that are not memories, this automatically excludes overlays since they are PNGs.
-            if file_path.suffix.lower() not in ('.mp4', '.jpg', '.jpeg'):
-                continue
-            
-            # Only include main media files
-            if '-main' in file_path.stem.lower():
-                media_files[rel_path] = file_path
-        
-        return media_files
     
     def _process_single_file(self, media_path: Path, rel_path: str, 
                             merge_overlays: bool, results: Dict[str, Any]) -> bool:

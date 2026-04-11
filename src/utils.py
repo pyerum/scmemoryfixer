@@ -40,45 +40,91 @@ def extract_uuid_from_url(url: str) -> Optional[str]:
     match = re.search(pattern, url, re.IGNORECASE)
     return match.group(1) if match else None
 
-def extract_zip_files(zip_paths: List[Path], extract_dir: Path) -> Dict[str, Path]:
+def sort_zips_by_name(zip_paths: List[Path]) -> List[Path]:
     """
-    Extract all zip files to a temporary directory.
-    Returns a dictionary mapping file extensions to their paths.
+    Sort zip files so the base one (without -2, -3 suffix) comes first.
+    The first zip contains the memories_history.json file.
     """
-    extracted_files = {}
+    def zip_sort_key(path: Path) -> tuple:
+        name = path.stem  # filename without extension
+        # Check if it ends with a number (like mydata~1234567890-2)
+        parts = name.rsplit('-', 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            # It's a continuation zip (mydata~timestamp-2, mydata~timestamp-3, etc.)
+            return (1, int(parts[1]), path.name)  # Sort after base zip
+        else:
+            # It's the base zip (mydata~timestamp)
+            return (0, 0, path.name)
     
-    for zip_path in zip_paths:
-        if not zip_path.exists():
-            logger.warning(f"Zip file not found: {zip_path}")
-            continue
-            
-        try:
-            # Create a unique subdirectory for each zip to avoid filename collisions
-            # and to make cleanup easier if needed
-            zip_extract_dir = extract_dir / f"zip_{zip_path.stem}"
-            zip_extract_dir.mkdir(parents=True, exist_ok=True)
-            
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                # Extract all files to the unique subdirectory
-                zip_ref.extractall(zip_extract_dir)
-                logger.info(f"Extracted {zip_path.name} to {zip_extract_dir}")
-                
-        except zipfile.BadZipFile:
-            logger.error(f"Bad zip file: {zip_path}")
-            continue
-        except Exception as e:
-            logger.error(f"Error extracting {zip_path}: {e}")
-            continue
+    return sorted(zip_paths, key=zip_sort_key)
+
+
+def extract_single_zip(zip_path: Path, extract_dir: Path) -> bool:
+    """
+    Extract a single zip file to a temporary directory.
+    Returns True if successful, False otherwise.
+    """
+    if not zip_path.exists():
+        logger.warning(f"Zip file not found: {zip_path}")
+        return False
     
-    # Collect all extracted files from all subdirectories
+    try:
+        # Create a unique subdirectory for this zip
+        zip_extract_dir = extract_dir / f"zip_{zip_path.stem}"
+        zip_extract_dir.mkdir(parents=True, exist_ok=True)
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(zip_extract_dir)
+            logger.info(f"Extracted {zip_path.name} to {zip_extract_dir}")
+        
+        return True
+        
+    except zipfile.BadZipFile:
+        logger.error(f"Bad zip file: {zip_path}")
+        return False
+    except Exception as e:
+        logger.error(f"Error extracting {zip_path}: {e}")
+        return False
+
+
+def cleanup_zip_extract(extract_dir: Path, zip_stem: str) -> bool:
+    """
+    Clean up extracted files from a specific zip.
+    Returns True if successful, False otherwise.
+    """
+    try:
+        zip_extract_dir = extract_dir / f"zip_{zip_stem}"
+        if zip_extract_dir.exists():
+            shutil.rmtree(zip_extract_dir)
+            logger.info(f"Cleaned up extracted files from {zip_stem}")
+            return True
+        return True  # Already cleaned up
+    except Exception as e:
+        logger.warning(f"Could not clean up {zip_stem}: {e}")
+        return False
+
+
+def collect_media_files_from_extract(extract_dir: Path) -> Dict[str, Path]:
+    """
+    Collect media files from an extracted directory.
+    Returns a dictionary mapping relative paths to file paths.
+    """
+    media_files = {}
+    
     for file_path in extract_dir.rglob("*"):
         if file_path.is_file():
-            ext = file_path.suffix.lower()
-            if ext in ['.jpg', '.jpeg', '.mp4', '.png', '.json']:
-                # Store relative path from extract_dir
-                extracted_files[str(file_path.relative_to(extract_dir))] = file_path
+            # Skip JSON files and overlay files
+            if file_path.suffix.lower() == '.json':
+                continue
+            if '-overlay' in file_path.stem.lower():
+                continue
+            
+            # Only include main media files
+            if file_path.suffix.lower() in ['.jpg', '.jpeg', '.mp4'] and '-main' in file_path.stem.lower():
+                media_files[str(file_path.relative_to(extract_dir))] = file_path
     
-    return extracted_files
+    return media_files
+
 
 def find_json_file(extract_dir: Path) -> Optional[Path]:
     """Find the memories_history.json file in the extracted directory."""

@@ -107,7 +107,7 @@ scmemoryfixer/
 
 ## License
 
-This project is provided as-is for personal use. License TBD
+This project is provided as-is for personal use and is licenced GNU GPL following the requirement of some of its dependencies.
 
 ## Troubleshooting
 

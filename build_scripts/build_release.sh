@@ -5,6 +5,10 @@ set -e  # Exit on error
 
 echo "=== Building Snapchat Memory Fixer Release ==="
 
+# Get version from version.py
+VERSION=$(python3 -c "import sys; sys.path.insert(0, 'src'); from version import VERSION; print(VERSION)")
+echo "Building version: $VERSION"
+
 # Clean previous builds
 echo "Cleaning previous builds..."
 rm -rf build/ dist/ 2>/dev/null || true
@@ -62,9 +66,9 @@ timeout 5 ./dist/snapmemoryfixer 2>&1 | head -5 && echo "Test passed!" || echo "
 echo ""
 echo "=== Creating release package ==="
 # Create a simple README for the release
-cat > dist/README.txt << 'EOF'
-Snapchat Memory Fixer - Linux Portable Edition
-==============================================
+cat > dist/README.txt << EOF
+Snapchat Memory Fixer v${VERSION} - Linux Portable Edition
+=========================================================
 
 This is a portable executable for fixing Snapchat memories export files.
 
@@ -91,20 +95,20 @@ For more information, visit the GitHub repository.
 
 EOF
 
-# Create release archive
+# Create release archive with versioned name
 echo "Creating release archive..."
 cd dist
-tar -czf ../snapmemoryfixer-linux-portable.tar.gz snapmemoryfixer README.txt
+tar -czf ../snapmemoryfixer-v${VERSION}-linux-portable.tar.gz snapmemoryfixer README.txt
 cd ..
 
 echo ""
 echo "=== Release package created! ==="
-echo "Archive: snapmemoryfixer-linux-portable.tar.gz"
-echo "Size: $(du -h snapmemoryfixer-linux-portable.tar.gz | cut -f1)"
+echo "Archive: snapmemoryfixer-v${VERSION}-linux-portable.tar.gz"
+echo "Size: $(du -h snapmemoryfixer-v${VERSION}-linux-portable.tar.gz | cut -f1)"
 echo ""
 echo "To distribute:"
-echo "  1. Upload snapmemoryfixer-linux-portable.tar.gz to GitHub Releases"
-echo "  2. Users can extract and run: tar -xzf snapmemoryfixer-linux-portable.tar.gz"
+echo "  1. Upload snapmemoryfixer-v\${VERSION}-linux-portable.tar.gz to GitHub Releases"
+echo "  2. Users can extract and run: tar -xzf snapmemoryfixer-v\${VERSION}-linux-portable.tar.gz"
 echo "  3. Then run: ./snapmemoryfixer"
 echo ""
 echo "Build process completed successfully!"

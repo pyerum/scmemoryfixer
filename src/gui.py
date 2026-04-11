@@ -4,13 +4,23 @@ Built with Tkinter for Linux compatibility.
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext
 from pathlib import Path
 from typing import List, Optional
 import threading
 import queue
 import logging
 from datetime import datetime
+
+try:
+    from .version import get_full_name
+except ImportError:
+    from version import get_full_name
+
+try:
+    from .file_dialog import ask_open_filenames, ask_saveas_filename
+except ImportError:
+    from file_dialog import ask_open_filenames, ask_saveas_filename
 
 from processor import MemoryProcessor
 
@@ -22,7 +32,7 @@ class MemoryFixerGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Snapchat Memory Fixer")
-        self.root.geometry("1300x1000")
+        self.root.geometry("1300x1100")
         
         # Configure styles
         self.setup_styles()
@@ -67,7 +77,12 @@ class MemoryFixerGUI:
         # Title
         title_label = ttk.Label(main_frame, text="Snapchat Memories Export Fixer", 
                                style="Title.TLabel")
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 5))
+        
+        # Version label
+        version_label = ttk.Label(main_frame, text=get_full_name(), 
+                                 font=("Helvetica", 10), foreground="gray")
+        version_label.grid(row=1, column=0, columnspan=3, pady=(0, 20))
         
         # Drag and drop area for zip files
         self.zip_frame = ttk.LabelFrame(main_frame, text="Select all the zip files from your export", padding="10")
@@ -137,27 +152,32 @@ class MemoryFixerGUI:
         progress_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), 
                            pady=(0, 10))
         progress_frame.columnconfigure(0, weight=1)
-        progress_frame.rowconfigure(2, weight=1)
+        progress_frame.rowconfigure(3, weight=1)
         
-        # Progress info row
-        progress_info_frame = ttk.Frame(progress_frame)
-        progress_info_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E))
+        # Progress info row - Zip counter
+        zip_counter_frame = ttk.Frame(progress_frame)
+        zip_counter_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 5))
         
-        self.progress_var = tk.StringVar(value="Ready")
-        ttk.Label(progress_info_frame, textvariable=self.progress_var).pack(side=tk.LEFT)
+        self.zip_counter_var = tk.StringVar(value="Zip: 0/0")
+        ttk.Label(zip_counter_frame, textvariable=self.zip_counter_var, 
+                 font=("Helvetica", 10, "bold")).pack(side=tk.LEFT)
         
-        self.progress_counter = tk.StringVar(value="0/0")
-        ttk.Label(progress_info_frame, textvariable=self.progress_counter, 
-                 font=("Helvetica", 10, "bold")).pack(side=tk.RIGHT)
+        # Progress info row - Media counter
+        media_counter_frame = ttk.Frame(progress_frame)
+        media_counter_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        self.media_counter_var = tk.StringVar(value="Media: 0/0")
+        ttk.Label(media_counter_frame, textvariable=self.media_counter_var, 
+                 font=("Helvetica", 10, "bold")).pack(side=tk.LEFT)
         
         # Progress bar row
         self.progress_bar = ttk.Progressbar(progress_frame, mode='determinate', length=300)
-        self.progress_bar.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0))
+        self.progress_bar.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0))
         
         # Log text area
         self.log_text = scrolledtext.ScrolledText(progress_frame, height=10, 
                                                  state=tk.DISABLED)
-        self.log_text.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), 
+        self.log_text.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), 
                           pady=(10, 0))
         
         # Control buttons
@@ -193,7 +213,7 @@ class MemoryFixerGUI:
     
     def add_zip_files(self):
         """Add zip files via file dialog."""
-        files = filedialog.askopenfilenames(
+        files = ask_open_filenames(
             title="Select Snapchat Export Zip Files",
             filetypes=[("Zip files", "*.zip"), ("All files", "*.*")]
         )
@@ -226,9 +246,9 @@ class MemoryFixerGUI:
     
     def select_output_dir(self):
         """Select output directory."""
-        directory = filedialog.askdirectory(title="Select Output Directory")
+        directory = ask_saveas_filename(title="Select Output Directory")
         if directory:
-            self.output_dir = Path(directory)
+            self.output_dir = directory
             self.output_var.set(str(self.output_dir))
             self.update_status()
     
@@ -264,8 +284,8 @@ class MemoryFixerGUI:
         self.processing = True
         self.process_button.config(text="Stop Processing")
         self.progress_bar['value'] = 0
-        self.progress_var.set("Processing...")
-        self.progress_counter.set("0/0")
+        self.zip_counter_var.set("Zip: 0/0")
+        self.media_counter_var.set("Media: 0/0")
         self.log_message("Starting processing...")
         
         # Start processing thread
@@ -277,7 +297,8 @@ class MemoryFixerGUI:
         self.processing = False
         self.process_button.config(text="Start Processing")
         self.progress_bar.stop()
-        self.progress_var.set("Stopped")
+        self.zip_counter_var.set("Zip: Stopped")
+        self.media_counter_var.set("Media: Stopped")
         self.log_message("Processing stopped by user")
         self.update_status()
     
@@ -286,10 +307,11 @@ class MemoryFixerGUI:
         try:
             self.processor = MemoryProcessor()
             
-            # Create progress callback function
-            def progress_callback(current: int, total: int):
+            # Create progress callback function with new signature:
+            # progress_callback(zip_current, zip_total, media_current, media_total)
+            def progress_callback(zip_current: int, zip_total: int, media_current: int, media_total: int):
                 """Send progress update to GUI thread."""
-                self.message_queue.put(('progress', (current, total)))
+                self.message_queue.put(('progress', (zip_current, zip_total, media_current, media_total)))
             
             # Ensure output_dir is not None (should be guaranteed by start_processing)
             if not self.output_dir:
@@ -333,23 +355,18 @@ class MemoryFixerGUI:
     
     def handle_progress(self, progress_data):
         """Handle progress update."""
-        current, total = progress_data
+        zip_current, zip_total, media_current, media_total = progress_data
         
-        # Update progress counter
-        self.progress_counter.set(f"{current}/{total}")
+        # Update zip counter
+        self.zip_counter_var.set(f"Zip: {zip_current}/{zip_total}")
         
-        # Update progress bar
-        if total > 0:
-            percentage = (current / total) * 100
+        # Update media counter
+        self.media_counter_var.set(f"Media: {media_current}/{media_total}")
+        
+        # Update progress bar based on zip progress
+        if zip_total > 0:
+            percentage = (zip_current / zip_total) * 100
             self.progress_bar['value'] = percentage
-            
-            # Update progress text
-            if current == 0:
-                self.progress_var.set("Processing...")
-            elif current == total:
-                self.progress_var.set("Finalizing...")
-            else:
-                self.progress_var.set(f"Processing... ({current}/{total})")
     
     def handle_results(self, results):
         """Handle processing results."""
@@ -362,7 +379,8 @@ class MemoryFixerGUI:
         duration_str = str(duration).split('.')[0]  # Remove microseconds
         
         # Update UI
-        self.progress_var.set(f"Completed in {duration_str}")
+        self.zip_counter_var.set(f"Zip: Completed in {duration_str}")
+        self.media_counter_var.set(f"Media: {results['processed_files']}/{results['total_files']}")
         
         # Show summary
         summary = (
@@ -395,7 +413,8 @@ class MemoryFixerGUI:
         self.processing = False
         self.process_button.config(text="Start Processing")
         self.progress_bar.stop()
-        self.progress_var.set("Error")
+        self.zip_counter_var.set("Zip: Error")
+        self.media_counter_var.set("Media: Error")
         
         self.log_message(f"Error: {error_msg}")
         messagebox.showerror("Processing Error", error_msg)
