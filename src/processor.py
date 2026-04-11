@@ -38,10 +38,19 @@ class MemoryProcessor:
     
     def process_files(self, zip_paths: List[Path], output_dir: Path, 
                      merge_image_overlays: bool, merge_video_overlays: bool,
-                     separate_folders: bool = True) -> Dict[str, Any]:
+                     separate_folders: bool = True, 
+                     progress_callback = None) -> Dict[str, Any]:
         """
         Main processing function.
         Returns a dictionary with processing results.
+        
+        Args:
+            zip_paths: List of zip file paths
+            output_dir: Output directory for processed files
+            merge_image_overlays: Whether to merge overlays with images
+            merge_video_overlays: Whether to merge overlays with videos
+            separate_folders: Whether to separate images and videos into subdirectories
+            progress_callback: Optional callback function for progress updates
         """
         results = {
             'total_files': 0,
@@ -85,6 +94,10 @@ class MemoryProcessor:
             
             logger.info(f"Processing {len(media_files)} media files...")
             
+            # Send initial progress update
+            if progress_callback:
+                progress_callback(0, len(media_files))
+            
             for i, (rel_path, media_path) in enumerate(media_files.items()):
                 try:
                     # Determine which overlay option to use based on file type
@@ -103,6 +116,10 @@ class MemoryProcessor:
                         results['processed_files'] += 1
                     else:
                         results['failed_files'] += 1
+                    
+                    # Send progress update
+                    if progress_callback:
+                        progress_callback(i + 1, len(media_files))
                     
                     # Log progress every 10 files
                     if (i + 1) % 10 == 0 or (i + 1) == len(media_files):
@@ -131,12 +148,8 @@ class MemoryProcessor:
         media_files = {}
         
         for rel_path, file_path in extracted_files.items():
-            # Skip JSON files and overlay files
-            if file_path.suffix.lower() == '.json':
-                continue
-            
-            # Skip overlay files (they'll be handled with their main files)
-            if '-overlay' in file_path.stem.lower():
+            # Skip files that are not memories, this automatically excludes overlays since they are PNGs.
+            if file_path.suffix.lower() not in ('.mp4', '.jpg', '.jpeg'):
                 continue
             
             # Only include main media files

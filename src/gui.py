@@ -137,19 +137,27 @@ class MemoryFixerGUI:
         progress_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), 
                            pady=(0, 10))
         progress_frame.columnconfigure(0, weight=1)
-        progress_frame.rowconfigure(1, weight=1)
+        progress_frame.rowconfigure(2, weight=1)
+        
+        # Progress info row
+        progress_info_frame = ttk.Frame(progress_frame)
+        progress_info_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E))
         
         self.progress_var = tk.StringVar(value="Ready")
-        ttk.Label(progress_frame, textvariable=self.progress_var).grid(row=0, column=0, 
-                                                                      sticky=tk.W)
+        ttk.Label(progress_info_frame, textvariable=self.progress_var).pack(side=tk.LEFT)
         
-        self.progress_bar = ttk.Progressbar(progress_frame, mode='indeterminate')
-        self.progress_bar.grid(row=0, column=1, sticky=(tk.W, tk.E))
+        self.progress_counter = tk.StringVar(value="0/0")
+        ttk.Label(progress_info_frame, textvariable=self.progress_counter, 
+                 font=("Helvetica", 10, "bold")).pack(side=tk.RIGHT)
+        
+        # Progress bar row
+        self.progress_bar = ttk.Progressbar(progress_frame, mode='determinate', length=300)
+        self.progress_bar.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0))
         
         # Log text area
         self.log_text = scrolledtext.ScrolledText(progress_frame, height=10, 
                                                  state=tk.DISABLED)
-        self.log_text.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), 
+        self.log_text.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), 
                           pady=(10, 0))
         
         # Control buttons
@@ -255,8 +263,9 @@ class MemoryFixerGUI:
         # Disable UI
         self.processing = True
         self.process_button.config(text="Stop Processing")
-        self.progress_bar.start()
+        self.progress_bar['value'] = 0
         self.progress_var.set("Processing...")
+        self.progress_counter.set("0/0")
         self.log_message("Starting processing...")
         
         # Start processing thread
@@ -276,12 +285,23 @@ class MemoryFixerGUI:
         """Processing thread function."""
         try:
             self.processor = MemoryProcessor()
+            
+            # Create progress callback function
+            def progress_callback(current: int, total: int):
+                """Send progress update to GUI thread."""
+                self.message_queue.put(('progress', (current, total)))
+            
+            # Ensure output_dir is not None (should be guaranteed by start_processing)
+            if not self.output_dir:
+                raise ValueError("Output directory not selected")
+            
             results = self.processor.process_files(
                 self.zip_files, 
                 self.output_dir, 
                 self.merge_image_overlays.get(),
                 self.merge_video_overlays.get(),
-                self.separate_folders.get()
+                self.separate_folders.get(),
+                progress_callback=progress_callback
             )
             
             # Send results to main thread via queue
@@ -302,12 +322,34 @@ class MemoryFixerGUI:
                     self.handle_error(data)
                 elif msg_type == 'log':
                     self.log_message(data)
+                elif msg_type == 'progress':
+                    self.handle_progress(data)
                     
         except queue.Empty:
             pass
         
         # Schedule next poll
         self.root.after(100, self.poll_message_queue)
+    
+    def handle_progress(self, progress_data):
+        """Handle progress update."""
+        current, total = progress_data
+        
+        # Update progress counter
+        self.progress_counter.set(f"{current}/{total}")
+        
+        # Update progress bar
+        if total > 0:
+            percentage = (current / total) * 100
+            self.progress_bar['value'] = percentage
+            
+            # Update progress text
+            if current == 0:
+                self.progress_var.set("Processing...")
+            elif current == total:
+                self.progress_var.set("Finalizing...")
+            else:
+                self.progress_var.set(f"Processing... ({current}/{total})")
     
     def handle_results(self, results):
         """Handle processing results."""

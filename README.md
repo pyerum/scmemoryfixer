@@ -22,11 +22,25 @@ The application extracts, processes, and fixes these files.
 
 ## Installation
 
-### Prerequisites
+### Option 1: Portable Linux Executable (Recommended)
+For users who don't want to install Python and dependencies:
+
+1. Download the latest release from GitHub Releases
+2. Extract the archive:
+   ```bash
+   tar -xzf snapmemoryfixer-linux-portable.tar.gz
+   ```
+3. Run the executable:
+   ```bash
+   ./snapmemoryfixer
+   ```
+
+### Option 2: From Source
+#### Prerequisites
 - Python 3.10 or higher
 - Linux-based system (tested on Ubuntu/Debian)
 
-### Setup and usage
+#### Setup and usage
 
 1. Clone or download this repository
 2. Run the start script (automatically sets up virtual environment (if not found)), installs missing dependencies and starts the GUI:
@@ -62,12 +76,23 @@ scmemoryfixer/
 ├── main.py              # Application entry point
 ├── requirements.txt     # Python dependencies
 ├── README.md           # This file
-└── src/                # Source code
-    ├── gui.py          # Tkinter GUI implementation
-    ├── processor.py    # Main processing logic
-    ├── metadata.py     # EXIF metadata handling
-    ├── overlay.py      # Overlay merging functionality
-    └── utils.py        # Utility functions
+├── run.sh              # Development startup script
+├── clean.sh            # Clean build artifacts script
+├── .gitignore          # Git ignore patterns
+├── build_scripts/      # Build and packaging scripts
+│   ├── build_linux.sh      # Linux build script
+│   ├── build_release.sh    # Release build script
+│   └── *.spec              # PyInstaller spec files
+├── src/                # Source code
+│   ├── gui.py          # Tkinter GUI implementation
+│   ├── processor.py    # Main processing logic
+│   ├── metadata.py     # EXIF metadata handling
+│   ├── overlay.py      # Overlay merging functionality
+│   ├── utils.py        # Utility functions
+│   └── exiftool_wrapper.py # ExifTool wrapper
+└── exiftool/           # Bundled ExifTool binaries
+    ├── Image-ExifTool-13.55/    # Linux/macOS version
+    └── exiftool-13.55_64/       # Windows version
 ```
 
 ## Limitations

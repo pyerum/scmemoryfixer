@@ -15,6 +15,15 @@ logger = logging.getLogger(__name__)
 class ExifToolWrapper:
     """Wrapper for exiftool command-line tool."""
     
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls, exiftool_path: Optional[Path] = None):
+        """Singleton pattern - ensure only one instance exists."""
+        if cls._instance is None:
+            cls._instance = super(ExifToolWrapper, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self, exiftool_path: Optional[Path] = None):
         """
         Initialize exiftool wrapper.
@@ -22,6 +31,10 @@ class ExifToolWrapper:
         Args:
             exiftool_path: Path to exiftool executable. If None, tries to find it.
         """
+        # Only initialize once
+        if ExifToolWrapper._initialized:
+            return
+            
         self.exiftool_path = self._find_exiftool(exiftool_path)
         if not self.exiftool_path:
             raise RuntimeError("exiftool not found. Please ensure exiftool is available.")
@@ -34,6 +47,8 @@ class ExifToolWrapper:
             logger.info(f"ExifTool version: {version}")
         except Exception as e:
             raise RuntimeError(f"Failed to run exiftool: {e}")
+        
+        ExifToolWrapper._initialized = True
     
     def _find_exiftool(self, exiftool_path: Optional[Path]) -> Optional[Path]:
         """Find exiftool executable."""
@@ -41,7 +56,36 @@ class ExifToolWrapper:
         if exiftool_path and exiftool_path.exists():
             return exiftool_path
         
-        # Check bundled exiftool in project directory
+        # Check PyInstaller temporary directory first (if running as packaged executable)
+        try:
+            import sys
+            if hasattr(sys, '_MEIPASS'):
+                # Running as PyInstaller packaged executable
+                meipass_dir = Path(sys._MEIPASS)
+                
+                import platform
+                system = platform.system()
+                
+                if system == "Windows":
+                    # Windows paths in PyInstaller bundle
+                    bundled_paths = [
+                        meipass_dir / "exiftool" / "exiftool-13.55_64" / "exiftool(-k).exe",
+                        meipass_dir / "exiftool" / "exiftool.exe",
+                    ]
+                else:
+                    # Linux/macOS paths in PyInstaller bundle
+                    bundled_paths = [
+                        meipass_dir / "exiftool" / "Image-ExifTool-13.55" / "exiftool",
+                        meipass_dir / "exiftool" / "exiftool",
+                    ]
+                
+                for path in bundled_paths:
+                    if path.exists():
+                        return path
+        except:
+            pass
+        
+        # Check bundled exiftool in project directory (development mode)
         project_dir = Path(__file__).parent.parent
         
         # Platform-specific executable names
@@ -165,7 +209,6 @@ class ExifToolWrapper:
                 f"-TrackModifyDate={date_str}",
                 f"-CreationDate={date_str}",  # QuickTime movie creation date
                 f"-ModificationDate={date_str}",  # QuickTime movie modification date
-                f"-com.apple.quicktime.creationdate={date_str}",
             ])
         
         # Add GPS coordinates if available

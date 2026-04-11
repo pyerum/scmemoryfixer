@@ -53,10 +53,15 @@ def extract_zip_files(zip_paths: List[Path], extract_dir: Path) -> Dict[str, Pat
             continue
             
         try:
+            # Create a unique subdirectory for each zip to avoid filename collisions
+            # and to make cleanup easier if needed
+            zip_extract_dir = extract_dir / f"zip_{zip_path.stem}"
+            zip_extract_dir.mkdir(parents=True, exist_ok=True)
+            
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                # Extract all files
-                zip_ref.extractall(extract_dir)
-                logger.info(f"Extracted {zip_path.name}")
+                # Extract all files to the unique subdirectory
+                zip_ref.extractall(zip_extract_dir)
+                logger.info(f"Extracted {zip_path.name} to {zip_extract_dir}")
                 
         except zipfile.BadZipFile:
             logger.error(f"Bad zip file: {zip_path}")
@@ -65,11 +70,12 @@ def extract_zip_files(zip_paths: List[Path], extract_dir: Path) -> Dict[str, Pat
             logger.error(f"Error extracting {zip_path}: {e}")
             continue
     
-    # Collect all extracted files
+    # Collect all extracted files from all subdirectories
     for file_path in extract_dir.rglob("*"):
         if file_path.is_file():
             ext = file_path.suffix.lower()
             if ext in ['.jpg', '.jpeg', '.mp4', '.png', '.json']:
+                # Store relative path from extract_dir
                 extracted_files[str(file_path.relative_to(extract_dir))] = file_path
     
     return extracted_files
