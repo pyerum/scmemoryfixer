@@ -1,5 +1,7 @@
 # Snapchat Memories Export Fixer
 
+<img width="" src="resources/Presentazione.jpg" alt="Functionality preview graphic" align="center">
+
 A Python GUI application to fix metadata for Snapchat memories exported as zip files.
 
 ## Problem Statement
