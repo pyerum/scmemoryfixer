@@ -2,47 +2,56 @@
 
 <img width="" src="resources/Presentazione.jpg" alt="Functionality preview graphic" align="center">
 
-A Python GUI application to fix metadata for Snapchat memories exported as zip files.
+A Python GUI application to fix metadata and overlays for Snapchat memories exported as zip files.
 
 ## Problem Statement
 
-When exporting Snapchat memories, they are split into several ~2GB zip files. Each archive contains media files with incorrect metadata:
-- File creation/modification time is set to export time
+Whether because you decided you want to move off Snapchat, or because starting from the 26th of September 2026 the free cloud space for your memories will be capped at 5GB, you might want to save all your memories (videos and pictures) and keep them somewhere else, perhaps on your phone's storage and just view them through your gallery app, or maybe on another cloud service, or a hard disk, or your computer. So you decide to simply export all of them using Snapchat's export tool. But there is a problem:
+
+when exporting Snapchat memories, your export data is compressed in a zip file (or, likely, several, each of 2GB). Each archive contains media files with incorrect metadata:
+- File "modification" time is set to export time (so good luck sorting them)
 - EXIF (for images) and QuickTime (for videos) metadata lacks date/location information
 - Overlay files (the text, filters or drawings you can put on top of snaps) are separate PNG files
 
-The application extracts, processes, and fixes these files.
+This application extracts these files, fixes their metadata (location and date), and (optionally) merges captions, filters and stickers back into them. Then neatly saves them all on a folder of your choice (optionally separated into two folders /pictures and /videos).
+
+## How to use
+
+1. 🖥️ Open https://accounts.snapchat.com on a computer, login and go to "My Data"
+2. ☑️ Select **both** "Export your Memories" and "Export JSON Files" (the first two)
+3. 📅 Click "Next" -> Unselect "Do you want to export data from a specific date range?" or select "All Time" and check that your email is right, then hit "Submit"
+4. 🕗 Wait usually a few hours, you get an email that informs you when it's ready
+5. 📥 Go back to the "My Data" page, hit "View exports" to expand and download **all** the zip files.
+6. 🏷️ Go to the "Releases" page on the right panel of this page and download the latest version for your platform.
+7. ▶️ Extract the release file you just downloaded and run the executable inside of it (double click)
+8. ✅ Click "Add files" and select **ALL** the zip files you got from the Snapchat export (CTRL+Click to select more than one)
+9. 📁 Hit "Browse" to select a folder. Your memories (pictures and videos) will go directly in there
+10. ❓ Choose whether you want to put the overlays (text captions, filters, stickers, etc) back into the pictures and the videos, and choose whether you want the application to create two sub-folders /videos and /pictures to separate the two.
+11. 🔋 I recommend temporarily disabling sleep timeout on your device's power settings, to avoid the process getting interrupted.
+12. 🖼️ Hit "Start processing" to begin processing your memories.
+13. ✨ Done! The process will return a summary of the export. Your memories will be in the folder you had selected! VERIFY this before deleting the snapchat zip files, or you will have to re-download them.
+
+
+
+## Developers area below
 
 ## Features
 
-- **GUI Interface**: Easily add Snapchat export zip files
+- **No installations or dependencies required**: the releases self-contain a Python interpreter, Exiftool binaries and other Python libraries (see credits).
+- **GUI Interface with tkinter**: Ugly, but compatible and works well on all platforms
 - **Metadata Correction**: Updates EXIF/QuickTime data with correct dates/location from the JSON file present in the export
 - **Overlay Handling**: Optionally merges PNG overlays with media files
 - **File Organization**: Outputs organized files with `snapMemory_` prefix
 - **Error Handling**: Graceful handling of missing files/corrupted archives
 - **Logging**: Detailed log file creation for troubleshooting
 
-## Installation
+## Installation from source
 
-### Option 1: Portable Linux Executable (Recommended)
-For users who don't want to install Python and dependencies:
-
-1. Download the latest release from GitHub Releases
-2. Extract the archive:
-   ```bash
-   tar -xzf snapmemoryfixer-linux-portable.tar.gz
-   ```
-3. Run the executable:
-   ```bash
-   ./snapmemoryfixer
-   ```
-
-### Option 2: From Source
-#### Prerequisites
+### Prerequisites
 - Python 3.10 or higher
 - Linux-based system (tested on Ubuntu/Debian)
 
-#### Setup and usage
+### Setup and usage
 
 1. Clone or download this repository
 2. Run the start script (automatically sets up virtual environment (if not found)), installs missing dependencies and starts the GUI:
@@ -50,15 +59,9 @@ For users who don't want to install Python and dependencies:
    ./run.sh
    ```
 
-3. In the GUI:
-   - **Add Zip Files**: Click "Add Files" to select all your Snapchat export zip files
-   - **Select Output Directory**: Choose where to save processed files
-   - **Options**: Check "Merge overlays with pictures/videos" if you want overlays put back in them (this is the text you can add on top of snaps, filters and drawings, etc.). If you don't select this you will get the original pictures/videos clear of any text/other that you put on them. You can also toggle "Separate pictures and videos in two sub-directories (/videos and /pictures)", the two sub-directories will be created in the output directory you selected.
-   - **Process**: Click "Start Processing" to begin
-
 ## How It Works
 
-1. **Extraction**: All zip files are extracted to a temporary directory
+1. **Extraction**: Zip files are extracted one-by-one to a temp directory, beginning with the first zip file (the one containing the JSON with the metadatas, which gets saved).
 2. **Metadata Loading**: `memories_history.json` is parsed to build UUID→metadata mapping
 3. **File Processing**: Each media file is:
    - Matched to its metadata via UUID in filename
@@ -104,12 +107,12 @@ scmemoryfixer/
 ## Future Improvements
 
 - Refine timezone metadata for files that support it (the json contains UTC datetimes)
-- Add batch processing with resume capability
+- Add batch processing with resume capability and 
 - Add dark mode theme (why not?)
 
 ## License
 
-This project is provided as-is for personal use and is licenced GNU GPL following the requirement of some of its dependencies.
+This project is provided as-is for personal use only, without warrany or liability from the maintainer and is licensed GNU GPL following the requirement of some of its dependencies.
 
 ## Troubleshooting
 
@@ -127,10 +130,9 @@ Check the log file at `~/.snapmemoryfixer/snapmemoryfixer.log` for detailed erro
 
 This project uses the following libraries:
 - Pillow  # For image overlay operations
-- opencv-python-headless  # For video processing
+- opencv-python-headless  # For video overlay operations
 - python-dateutil  # For date parsing
-plus, most metadata processing happens thanks to ExifTool binaries directly included in the project for ease of use:
-- ExifTool
+- ExifTool # most metadata processing happens thanks to ExifTool binaries directly included in the project for ease of use and portability
 
 ### Disclaimer
-This project is not affiliated in any way with Snapchat or Snap Inc. Snapchat and the Snapchat logo are trademarks of Snapchat Inc.
+This project is not affiliated in any way with Snapchat or Snap Inc. Snapchat and the Snapchat logo are trademarks of Snap Inc.
